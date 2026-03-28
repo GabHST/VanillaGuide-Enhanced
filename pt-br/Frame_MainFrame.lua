@@ -633,6 +633,39 @@ function objMainFrame:new(fParent, tTexture, oSettings, oDisplay)
 					this:SetBackdropColor(.1, .1, .1, .5)
 				end
 			end)
+			sh:SetScript("OnHyperlinkClick", function()
+				local link = arg1
+				if not link then return end
+				if string.find(link, "^target:") then
+					local name = string.sub(link, 8)
+					if name and strlen(name) > 1 then
+						TargetByName(name, true)
+						if VG_Enhance then VG_Enhance:Log("TARGET", "Clicked target: " .. name) end
+					end
+				elseif string.find(link, "^coord:") then
+					local coordStr = string.sub(link, 7)
+					local x, y = nil, nil
+					for cx, cy in string.gfind(coordStr, "%[(%d+),(%d+)%]") do
+						x = tonumber(cx)
+						y = tonumber(cy)
+					end
+					if x and y and TomTom and TomTom.AddMFWaypoint then
+						if TomTom.ClearCrazyArrow then TomTom:ClearCrazyArrow() end
+						local stepInfo = oDisplay:GetCurrentStepInfo()
+						local zone = stepInfo and stepInfo.zone or nil
+						if zone then
+							TomTom:AddMFWaypoint(nil, zone, x/100, y/100, {
+								title = "VanillaGuide [" .. x .. "," .. y .. "]",
+								crazy = true,
+								persistent = false,
+								cleardistance = 10,
+								arrivaldistance = 15,
+							})
+							if VG_Enhance then VG_Enhance:Log("TOMTOM", "Clicked coord: " .. x .. "," .. y .. " zone: " .. zone) end
+						end
+					end
+				end
+			end)
 			sh:SetScript("OnMouseUp", function()
 				if arg1 == "LeftButton" then
 					local step = oDisplay:GetCurrentStep()
@@ -640,21 +673,6 @@ function objMainFrame:new(fParent, tTexture, oSettings, oDisplay)
 					local tx = strsub(this:GetName(), 11)
 					oDisplay:StepByID(tonumber(tx))
 					obj:RefreshData(false)
-
-					-- Shift+Click = target NPC/mob from step
-					if IsShiftKeyDown() then
-						local stepText = oDisplay:GetStepLabel()
-						if stepText then
-							-- Extract NPC names (magenta = |c00ff00ff....|r)
-							for name in string.gfind(stepText, "|c00ff00ff(.-)%|r") do
-								if name and strlen(name) > 1 then
-									TargetByName(name, true)
-									if VG_Enhance then VG_Enhance:Log("TARGET", "Shift+Click target: " .. name) end
-									break
-								end
-							end
-						end
-					end
 				elseif arg1 == "RightButton" then
 					-- Right-click to skip/advance step
 					local db = VG_EnhanceDB or {}

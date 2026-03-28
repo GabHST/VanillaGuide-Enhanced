@@ -52,45 +52,36 @@ function objGuideTable:new(oSettings)
 		for k1, _ in pairs(t1) do
 			if type(t1[k1].items) == "table" then
 				for k2, v2 in pairs(t1[k1].items) do
-					if v2 then
+					if v2 and v2.str then
+						local s = v2.str
+
+						-- Convert NPC tags to clickable hyperlinks
+						-- #NPCSomeName# → <a href="target:SomeName">|c00ff00ffSomeName|r</a>
+						s = gsub(s, "#NPC(.-)#", function(name)
+							return "<a href=\"target:" .. name .. "\">|c00ff00ff" .. name .. "|r</a>"
+						end)
+
+						-- Convert COORD tags to clickable hyperlinks
+						-- #COORD[31,66]# → <a href="coord:31,66">|c00ffff00[31,66]|r</a>
+						s = gsub(s, "#COORD(%[.-%])#", function(coord)
+							return "<a href=\"coord:" .. coord .. "\">|c00ffff00" .. coord .. "|r</a>"
+						end)
+
+						-- Regular color codes for other tags
 						local opentext = {
-							[1] = {
-								["find"] = "#GET",
-								["replace"] = "|c0000ffff"
-							},
-							[2] = {
-								["find"] = "#DO",
-								["replace"] = "|c000079d2"
-							},
-							[3] = {
-								["find"] = "#IN",
-								["replace"] = "|c0000ff00"
-							},
-							[4] = {
-								["find"] = "#NPC",
-								["replace"] = "|c00ff00ff"
-							},
-							[5] = {
-								["find"] = "#COORD",
-								["replace"] = "|c00ffff00"
-							},
-							[6] = {
-								["find"] = "#VIDEO",
-								["replace"] = "|c00ff0000"
-							},
-							[7] = {
-								["find"] = "#ITEM",
-								["replace"] = "|c00fca742"
-							},
-							[8] = {
-								["find"] = "#SKIP", 
-								["replace"] = "|c00a80000"
-							},
+							[1] = { ["find"] = "#GET", ["replace"] = "|c0000ffff" },
+							[2] = { ["find"] = "#DO", ["replace"] = "|c000079d2" },
+							[3] = { ["find"] = "#IN", ["replace"] = "|c0000ff00" },
+							[4] = { ["find"] = "#VIDEO", ["replace"] = "|c00ff0000" },
+							[5] = { ["find"] = "#ITEM", ["replace"] = "|c00fca742" },
+							[6] = { ["find"] = "#SKIP", ["replace"] = "|c00a80000" },
 						}
 						for n = 1, getn(opentext) do
-							t1[k1].items[k2].str = gsub(t1[k1].items[k2].str, opentext[n]["find"],opentext[n]["replace"])
+							s = gsub(s, opentext[n]["find"], opentext[n]["replace"])
 						end
-						t1[k1].items[k2].str = gsub(t1[k1].items[k2].str, "#","|r")
+						s = gsub(s, "#", "|r")
+
+						t1[k1].items[k2].str = s
 					end
 				end
 			end
