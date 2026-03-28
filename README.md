@@ -16,9 +16,8 @@ Compatible with private servers: [SoloCraft.org](https://solocraft.org), Elysium
 - No manual setup needed - just follow the arrow
 
 ### Smart Click Actions
-- **Click a step with NPC/Mob name** → auto-targets that NPC/Mob in the world
-- **Click a step with coordinates** → sets TomTom waypoint
-- Both work simultaneously on the same step
+- **Shift+Click a step** → targets the NPC/Mob mentioned in that step. If there are multiple NPCs, each Shift+Click cycles to the next one (shows "Target: Name (1/2)" in chat)
+- **Coordinates** → TomTom waypoint is set automatically when you select a step with coordinates
 - **Right-click any step** → skip to next step instantly
 
 ### Auto Quest Handling

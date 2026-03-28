@@ -54,9 +54,20 @@ function objGuideTable:new(oSettings)
 				for k2, v2 in pairs(t1[k1].items) do
 					if v2 and v2.str then
 						-- Extract NPC names before colorizing (for targeting)
-						v2.npcs = {}
-						for name in string.gfind(v2.str, "#NPC(.-)#") do
-							table.insert(v2.npcs, name)
+						if not v2.npcs then v2.npcs = {} end
+						local npcPattern = "#NPC"
+						local searchStr = v2.str
+						local startPos = 1
+						while true do
+							local s1 = string.find(searchStr, npcPattern, startPos, true)
+							if not s1 then break end
+							local s2 = string.find(searchStr, "#", s1 + 4, true)
+							if not s2 then break end
+							local npcName = string.sub(searchStr, s1 + 4, s2 - 1)
+							if npcName and strlen(npcName) > 0 then
+								table.insert(v2.npcs, npcName)
+							end
+							startPos = s2 + 1
 						end
 
 						local opentext = {

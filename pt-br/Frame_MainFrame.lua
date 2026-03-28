@@ -644,27 +644,34 @@ function objMainFrame:new(fParent, tTexture, oSettings, oDisplay)
 					-- Shift+Click = cycle target NPCs/Mobs in this step
 					if IsShiftKeyDown() then
 						local stepInfo = oDisplay:GetCurrentStepInfo()
-						if stepInfo and stepInfo.npcs and getn(stepInfo.npcs) > 0 then
-							-- Cycle through NPCs
-							if not obj._npcCycleIndex then obj._npcCycleIndex = 0 end
-							if not obj._npcCycleStep then obj._npcCycleStep = 0 end
-							-- Reset cycle if step changed
-							if obj._npcCycleStep ~= oDisplay:GetCurrentStep() then
-								obj._npcCycleIndex = 0
-								obj._npcCycleStep = oDisplay:GetCurrentStep()
-							end
-							obj._npcCycleIndex = obj._npcCycleIndex + 1
-							if obj._npcCycleIndex > getn(stepInfo.npcs) then
-								obj._npcCycleIndex = 1
-							end
-							local name = stepInfo.npcs[obj._npcCycleIndex]
-							if name and strlen(name) > 1 then
-								TargetByName(name, true)
-								if getn(stepInfo.npcs) > 1 then
-									DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00VG:|r Alvo: |cffff00ff" .. name .. "|r (" .. obj._npcCycleIndex .. "/" .. getn(stepInfo.npcs) .. ")")
+						if stepInfo and stepInfo.npcs then
+							local npcCount = 0
+							for _ in ipairs(stepInfo.npcs) do npcCount = npcCount + 1 end
+
+							if VG_Enhance then VG_Enhance:Log("TARGET", "Shift+Click: found " .. npcCount .. " NPCs in step " .. oDisplay:GetCurrentStep()) end
+
+							if npcCount > 0 then
+								if not obj._npcCycleIndex then obj._npcCycleIndex = 0 end
+								if not obj._npcCycleStep then obj._npcCycleStep = 0 end
+								if obj._npcCycleStep ~= oDisplay:GetCurrentStep() then
+									obj._npcCycleIndex = 0
+									obj._npcCycleStep = oDisplay:GetCurrentStep()
 								end
-								if VG_Enhance then VG_Enhance:Log("TARGET", "Shift+Click target: " .. name .. " (" .. obj._npcCycleIndex .. "/" .. getn(stepInfo.npcs) .. ")") end
+								obj._npcCycleIndex = obj._npcCycleIndex + 1
+								if obj._npcCycleIndex > npcCount then
+									obj._npcCycleIndex = 1
+								end
+								local name = stepInfo.npcs[obj._npcCycleIndex]
+								if name and strlen(name) > 1 then
+									TargetByName(name, true)
+									DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00VG:|r Alvo: |cffff00ff" .. name .. "|r (" .. obj._npcCycleIndex .. "/" .. npcCount .. ")")
+									if VG_Enhance then VG_Enhance:Log("TARGET", "Targeting: " .. name) end
+								end
+							else
+								if VG_Enhance then VG_Enhance:Log("TARGET", "No NPCs in this step") end
 							end
+						else
+							if VG_Enhance then VG_Enhance:Log("TARGET", "stepInfo or npcs is nil") end
 						end
 					end
 				elseif arg1 == "RightButton" then
