@@ -33,8 +33,8 @@ Description:
 Debug:
 --]]--------------------------------------------------
 
-debug_info = true
---debug_info = false
+--debug_info = true
+debug_info = false
 --debug_verbose = true
 debug_verbose = false
 

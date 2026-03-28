@@ -5,48 +5,62 @@ Features:
   - Combat transparency (optional, default off)
   - Compact mode toggle (optional, default off)
   - Auto-accept/turn-in quests
-  - Auto-advance steps on quest completion
   - Right-click to skip step
   - Step counter display
   - Progress bar
-  - Step type color coding
   - Time estimate per zone
-  - Auto-detect guide by level
 ------------------------------------------------------]]
 
 VG_Enhance = {}
 VG_Enhance.inCombat = false
 VG_Enhance.compactMode = false
+VG_Enhance.initialized = false
+VG_Enhance.logMax = 500
 
--- Default settings (saved per character)
-VG_Enhance.defaults = {
-	combatTransparency = false,
-	combatAlpha = 0.3,
-	autoAcceptTurnIn = true,
-	autoAdvance = true,
-	rightClickSkip = true,
-	showStepCounter = true,
-	showProgressBar = true,
-	autoDetectGuide = true,
-	timeEstimate = true,
-}
+---------------------------------------------------------
+-- DEBUG LOG (silent, saved to VG_DebugLog variable)
+-- Player never sees this. Check WTF SavedVariables.
+---------------------------------------------------------
+function VG_Enhance:Log(category, message)
+	if not VG_DebugLog then VG_DebugLog = {} end
+	local timestamp = date("%H:%M:%S")
+	local entry = timestamp .. " [" .. (category or "?") .. "] " .. (message or "")
+	table.insert(VG_DebugLog, entry)
+	-- Keep log size manageable
+	while getn(VG_DebugLog) > self.logMax do
+		table.remove(VG_DebugLog, 1)
+	end
+end
+
+-- Safe DB access
+local function DB()
+	if not VG_EnhanceDB then
+		VG_EnhanceDB = {
+			combatTransparency = false,
+			combatAlpha = 0.3,
+			autoAcceptTurnIn = true,
+			autoAdvance = true,
+			rightClickSkip = true,
+			showStepCounter = true,
+			showProgressBar = true,
+			autoDetectGuide = true,
+			timeEstimate = true,
+		}
+	end
+	return VG_EnhanceDB
+end
 
 -- Initialize
 function VG_Enhance:Init()
-	if not VG_EnhanceDB then
-		VG_EnhanceDB = {}
-	end
-	for k, v in pairs(self.defaults) do
-		if VG_EnhanceDB[k] == nil then
-			VG_EnhanceDB[k] = v
-		end
-	end
-
+	if self.initialized then return end
+	DB() -- ensure defaults exist
+	self:Log("INIT", "VG_Enhance initializing...")
 	self:CreateCombatFrame()
-	self:CreateCompactFrame()
 	self:CreateAutoQuestFrame()
 	self:CreateStepCounterFrame()
 	self:CreateProgressBarFrame()
+	self.initialized = true
+	self:Log("INIT", "VG_Enhance initialized successfully")
 end
 
 ---------------------------------------------------------
@@ -57,15 +71,17 @@ function VG_Enhance:CreateCombatFrame()
 	f:RegisterEvent("PLAYER_REGEN_DISABLED")
 	f:RegisterEvent("PLAYER_REGEN_ENABLED")
 	f:SetScript("OnEvent", function()
-		if not VG_EnhanceDB.combatTransparency then return end
+		if not DB().combatTransparency then return end
 		local mainFrame = getglobal("VG_MainFrame")
 		if not mainFrame then return end
 		if event == "PLAYER_REGEN_DISABLED" then
 			VG_Enhance.inCombat = true
-			mainFrame:SetAlpha(VG_EnhanceDB.combatAlpha)
+			mainFrame:SetAlpha(DB().combatAlpha)
+			VG_Enhance:Log("COMBAT", "Entered combat - alpha set to " .. DB().combatAlpha)
 		elseif event == "PLAYER_REGEN_ENABLED" then
 			VG_Enhance.inCombat = false
 			mainFrame:SetAlpha(1)
+			VG_Enhance:Log("COMBAT", "Left combat - alpha restored")
 		end
 	end)
 end
@@ -73,45 +89,22 @@ end
 ---------------------------------------------------------
 -- COMPACT MODE
 ---------------------------------------------------------
-function VG_Enhance:CreateCompactFrame()
-	local btn = CreateFrame("Button", "VG_CompactToggle", UIParent)
-	btn:SetWidth(20)
-	btn:SetHeight(20)
-	btn:SetPoint("TOPLEFT", UIParent, "TOPLEFT", 5, -200)
-	btn:SetNormalTexture("Interface\\Buttons\\UI-MinusButton-Up")
-	btn:SetHighlightTexture("Interface\\Buttons\\UI-PlusButton-Hilight")
-	btn:EnableMouse(true)
-	btn:RegisterForClicks("LeftButtonUp")
-	btn:SetScript("OnClick", function()
-		VG_Enhance:ToggleCompact()
-	end)
-	btn:SetScript("OnEnter", function()
-		GameTooltip:SetOwner(this, "ANCHOR_RIGHT")
-		GameTooltip:SetText("VanillaGuide: Modo Compacto")
-		GameTooltip:Show()
-	end)
-	btn:SetScript("OnLeave", function()
-		GameTooltip:Hide()
-	end)
-	btn:Hide()
-end
-
 function VG_Enhance:ToggleCompact()
 	local mainFrame = getglobal("VG_MainFrame")
 	if not mainFrame then return end
 	if self.compactMode then
 		self.compactMode = false
-		mainFrame:SetHeight(mainFrame.originalHeight or 320)
-		if mainFrame.scrollFrame then mainFrame.scrollFrame:Show() end
-		local btn = getglobal("VG_CompactToggle")
-		if btn then btn:SetNormalTexture("Interface\\Buttons\\UI-MinusButton-Up") end
+		mainFrame:SetHeight(mainFrame.vg_originalHeight or 320)
+		local sfc = getglobal("VG_MainFrame_ScrollFrameChild")
+		if sfc then sfc:GetParent():Show() end
+		DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00VanillaGuide:|r Modo compacto: OFF")
 	else
 		self.compactMode = true
-		mainFrame.originalHeight = mainFrame:GetHeight()
+		mainFrame.vg_originalHeight = mainFrame:GetHeight()
 		mainFrame:SetHeight(60)
-		if mainFrame.scrollFrame then mainFrame.scrollFrame:Hide() end
-		local btn = getglobal("VG_CompactToggle")
-		if btn then btn:SetNormalTexture("Interface\\Buttons\\UI-PlusButton-Up") end
+		local sfc = getglobal("VG_MainFrame_ScrollFrameChild")
+		if sfc then sfc:GetParent():Hide() end
+		DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00VanillaGuide:|r Modo compacto: ON")
 	end
 end
 
@@ -123,35 +116,33 @@ function VG_Enhance:CreateAutoQuestFrame()
 	f:RegisterEvent("QUEST_DETAIL")
 	f:RegisterEvent("QUEST_PROGRESS")
 	f:RegisterEvent("QUEST_COMPLETE")
-	f:RegisterEvent("QUEST_LOG_UPDATE")
 	f:SetScript("OnEvent", function()
-		if event == "QUEST_DETAIL" and VG_EnhanceDB.autoAcceptTurnIn then
+		if not DB().autoAcceptTurnIn then return end
+		if event == "QUEST_DETAIL" then
+			VG_Enhance:Log("QUEST", "Auto-accepting quest")
 			AcceptQuest()
-		elseif event == "QUEST_PROGRESS" and VG_EnhanceDB.autoAcceptTurnIn then
+		elseif event == "QUEST_PROGRESS" then
 			if IsQuestCompletable() then
+				VG_Enhance:Log("QUEST", "Auto-completing quest")
 				CompleteQuest()
 			end
-		elseif event == "QUEST_COMPLETE" and VG_EnhanceDB.autoAcceptTurnIn then
+		elseif event == "QUEST_COMPLETE" then
 			if GetNumQuestChoices() == 0 then
+				VG_Enhance:Log("QUEST", "Auto-reward (no choices)")
 				GetQuestReward()
 			elseif GetNumQuestChoices() == 1 then
+				VG_Enhance:Log("QUEST", "Auto-reward (1 choice)")
 				GetQuestReward(1)
+			else
+				VG_Enhance:Log("QUEST", "Multiple rewards - player must choose (" .. GetNumQuestChoices() .. " choices)")
 			end
-			-- If multiple rewards, let player choose
-		elseif event == "QUEST_LOG_UPDATE" and VG_EnhanceDB.autoAdvance then
-			VG_Enhance:CheckAutoAdvance()
+			-- Multiple rewards: let player choose
 		end
 	end)
 end
 
-function VG_Enhance:CheckAutoAdvance()
-	-- This fires when quest log changes (quest completed, new quest, etc)
-	-- We can use this to auto-advance steps
-	-- Simple approach: if a quest was just turned in, advance
-end
-
 ---------------------------------------------------------
--- STEP COUNTER (Step 14/47)
+-- STEP COUNTER (Passo 14/47)
 ---------------------------------------------------------
 function VG_Enhance:CreateStepCounterFrame()
 	local f = CreateFrame("Frame", "VG_StepCounter", UIParent)
@@ -165,8 +156,9 @@ function VG_Enhance:CreateStepCounterFrame()
 end
 
 function VG_Enhance:UpdateStepCounter(current, total)
-	if not VG_EnhanceDB.showStepCounter then
-		getglobal("VG_StepCounter"):Hide()
+	if not DB().showStepCounter then
+		local f = getglobal("VG_StepCounter")
+		if f then f:Hide() end
 		return
 	end
 	local f = getglobal("VG_StepCounter")
@@ -201,14 +193,16 @@ function VG_Enhance:CreateProgressBarFrame()
 end
 
 function VG_Enhance:UpdateProgressBar(current, total)
-	if not VG_EnhanceDB.showProgressBar then
-		getglobal("VG_ProgressBar"):Hide()
+	if not DB().showProgressBar then
+		local f = getglobal("VG_ProgressBar")
+		if f then f:Hide() end
 		return
 	end
 	local f = getglobal("VG_ProgressBar")
 	if f and current and total and total > 0 then
 		local pct = current / total
-		f.bar:SetWidth(math.max(1, (f:GetWidth() - 2) * pct))
+		local barWidth = math.max(1, (f:GetWidth() - 2) * pct)
+		f.bar:SetWidth(barWidth)
 		local percent = math.floor(pct * 100)
 		f.text:SetText(percent .. "%")
 		f:Show()
@@ -219,8 +213,7 @@ end
 -- TIME ESTIMATE
 ---------------------------------------------------------
 function VG_Enhance:EstimateTime(stepsRemaining)
-	if not VG_EnhanceDB.timeEstimate then return nil end
-	-- ~2 min per step average
+	if not DB().timeEstimate then return nil end
 	local mins = stepsRemaining * 2
 	if mins >= 60 then
 		return math.floor(mins / 60) .. "h " .. (mins - math.floor(mins / 60) * 60) .. "min"
@@ -230,35 +223,40 @@ function VG_Enhance:EstimateTime(stepsRemaining)
 end
 
 ---------------------------------------------------------
--- SLASH COMMANDS
+-- SLASH COMMANDS (toggle on/off by typing again)
 ---------------------------------------------------------
 SLASH_VGENHANCE1 = "/vge"
 SlashCmdList.VGENHANCE = function(msg)
 	msg = string.lower(msg or "")
+	local db = DB()
 	if msg == "combat" then
-		VG_EnhanceDB.combatTransparency = not VG_EnhanceDB.combatTransparency
-		DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00VanillaGuide:|r Transparencia em combate: " .. (VG_EnhanceDB.combatTransparency and "ON" or "OFF"))
+		db.combatTransparency = not db.combatTransparency
+		DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00VanillaGuide:|r Transparencia em combate: " .. (db.combatTransparency and "|cff00ff00ON|r" or "|cffff0000OFF|r"))
 	elseif msg == "compact" then
 		VG_Enhance:ToggleCompact()
 	elseif msg == "autoquest" then
-		VG_EnhanceDB.autoAcceptTurnIn = not VG_EnhanceDB.autoAcceptTurnIn
-		DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00VanillaGuide:|r Auto aceitar/entregar quests: " .. (VG_EnhanceDB.autoAcceptTurnIn and "ON" or "OFF"))
+		db.autoAcceptTurnIn = not db.autoAcceptTurnIn
+		DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00VanillaGuide:|r Auto aceitar/entregar quests: " .. (db.autoAcceptTurnIn and "|cff00ff00ON|r" or "|cffff0000OFF|r"))
 	elseif msg == "counter" then
-		VG_EnhanceDB.showStepCounter = not VG_EnhanceDB.showStepCounter
-		DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00VanillaGuide:|r Contador de steps: " .. (VG_EnhanceDB.showStepCounter and "ON" or "OFF"))
+		db.showStepCounter = not db.showStepCounter
+		DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00VanillaGuide:|r Contador de steps: " .. (db.showStepCounter and "|cff00ff00ON|r" or "|cffff0000OFF|r"))
 	elseif msg == "progress" then
-		VG_EnhanceDB.showProgressBar = not VG_EnhanceDB.showProgressBar
-		DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00VanillaGuide:|r Barra de progresso: " .. (VG_EnhanceDB.showProgressBar and "ON" or "OFF"))
+		db.showProgressBar = not db.showProgressBar
+		DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00VanillaGuide:|r Barra de progresso: " .. (db.showProgressBar and "|cff00ff00ON|r" or "|cffff0000OFF|r"))
 	elseif msg == "time" then
-		VG_EnhanceDB.timeEstimate = not VG_EnhanceDB.timeEstimate
-		DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00VanillaGuide:|r Estimativa de tempo: " .. (VG_EnhanceDB.timeEstimate and "ON" or "OFF"))
+		db.timeEstimate = not db.timeEstimate
+		DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00VanillaGuide:|r Estimativa de tempo: " .. (db.timeEstimate and "|cff00ff00ON|r" or "|cffff0000OFF|r"))
+	elseif msg == "skip" then
+		db.rightClickSkip = not db.rightClickSkip
+		DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00VanillaGuide:|r Right-click pra pular step: " .. (db.rightClickSkip and "|cff00ff00ON|r" or "|cffff0000OFF|r"))
 	else
-		DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00VanillaGuide Melhorias:|r")
-		DEFAULT_CHAT_FRAME:AddMessage("  /vge combat - Transparencia em combate: " .. (VG_EnhanceDB.combatTransparency and "|cff00ff00ON|r" or "|cffff0000OFF|r"))
-		DEFAULT_CHAT_FRAME:AddMessage("  /vge compact - Modo compacto")
-		DEFAULT_CHAT_FRAME:AddMessage("  /vge autoquest - Auto aceitar/entregar: " .. (VG_EnhanceDB.autoAcceptTurnIn and "|cff00ff00ON|r" or "|cffff0000OFF|r"))
-		DEFAULT_CHAT_FRAME:AddMessage("  /vge counter - Contador de steps: " .. (VG_EnhanceDB.showStepCounter and "|cff00ff00ON|r" or "|cffff0000OFF|r"))
-		DEFAULT_CHAT_FRAME:AddMessage("  /vge progress - Barra de progresso: " .. (VG_EnhanceDB.showProgressBar and "|cff00ff00ON|r" or "|cffff0000OFF|r"))
-		DEFAULT_CHAT_FRAME:AddMessage("  /vge time - Estimativa de tempo: " .. (VG_EnhanceDB.timeEstimate and "|cff00ff00ON|r" or "|cffff0000OFF|r"))
+		DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00=== VanillaGuide Enhanced ===|r")
+		DEFAULT_CHAT_FRAME:AddMessage("  /vge combat    - Transparencia em combate: " .. (db.combatTransparency and "|cff00ff00ON|r" or "|cffff0000OFF|r"))
+		DEFAULT_CHAT_FRAME:AddMessage("  /vge compact   - Modo compacto")
+		DEFAULT_CHAT_FRAME:AddMessage("  /vge autoquest - Auto aceitar/entregar: " .. (db.autoAcceptTurnIn and "|cff00ff00ON|r" or "|cffff0000OFF|r"))
+		DEFAULT_CHAT_FRAME:AddMessage("  /vge counter   - Contador de steps: " .. (db.showStepCounter and "|cff00ff00ON|r" or "|cffff0000OFF|r"))
+		DEFAULT_CHAT_FRAME:AddMessage("  /vge progress  - Barra de progresso: " .. (db.showProgressBar and "|cff00ff00ON|r" or "|cffff0000OFF|r"))
+		DEFAULT_CHAT_FRAME:AddMessage("  /vge time      - Estimativa de tempo: " .. (db.timeEstimate and "|cff00ff00ON|r" or "|cffff0000OFF|r"))
+		DEFAULT_CHAT_FRAME:AddMessage("  /vge skip      - Right-click pular step: " .. (db.rightClickSkip and "|cff00ff00ON|r" or "|cffff0000OFF|r"))
 	end
 end

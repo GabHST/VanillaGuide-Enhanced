@@ -499,19 +499,23 @@ function objMainFrame:new(fParent, tTexture, oSettings, oDisplay)
 	-- Settings Button
 		obj.tWidgets.button_SettingsButton:SetScript("OnClick", function()
 			local fSettings = getglobal("VG_SettingsFrame")
-			if fSettings:IsVisible() then
-				fSettings:Hide()
-			else
-				fSettings:Show()
+			if fSettings then
+				if fSettings:IsVisible() then
+					fSettings:Hide()
+				else
+					fSettings:Show()
+				end
 			end
 		end)
 	-- About Button
 		obj.tWidgets.button_AboutButton:SetScript("OnClick", function()
 		  local fAbout = getglobal("VG_AboutFrame")
-		  if fAbout:IsVisible() then
-			fAbout:Hide()
-		  else
-			fAbout:Show()
+		  if fAbout then
+			if fAbout:IsVisible() then
+				fAbout:Hide()
+			else
+				fAbout:Show()
+			end
 		  end
 		end)
 	-- Change View Button
@@ -677,7 +681,8 @@ function objMainFrame:new(fParent, tTexture, oSettings, oDisplay)
 					end
 				elseif arg1 == "RightButton" then
 					-- Right-click to skip/advance step
-					if VG_EnhanceDB and VG_EnhanceDB.rightClickSkip then
+					local db = VG_EnhanceDB or {}
+					if db.rightClickSkip then
 						oDisplay:NextStep()
 						obj:RefreshData(false)
 					end
@@ -863,7 +868,7 @@ function objMainFrame:new(fParent, tTexture, oSettings, oDisplay)
 		obj:RefreshMetaMap()
 
 		-- Update enhancements (step counter, progress bar, time estimate)
-		if VG_Enhance then
+		if VG_Enhance and VG_Enhance.initialized then
 			local current = oDisplay:GetCurrentStep()
 			local total = oDisplay:GetCurrentStepCount()
 			if current and total then
@@ -884,7 +889,8 @@ function objMainFrame:new(fParent, tTexture, oSettings, oDisplay)
 					pbar:SetPoint("BOTTOMLEFT", mainFrame, "TOPLEFT", 0, 18)
 
 					-- Time estimate
-					if VG_EnhanceDB and VG_EnhanceDB.timeEstimate and total > 0 then
+					local db = VG_EnhanceDB or {}
+					if db.timeEstimate and total > 0 then
 						local remaining = total - current
 						local timeStr = VG_Enhance:EstimateTime(remaining)
 						if timeStr then
