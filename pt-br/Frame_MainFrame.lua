@@ -641,42 +641,18 @@ function objMainFrame:new(fParent, tTexture, oSettings, oDisplay)
 					oDisplay:StepByID(tonumber(tx))
 					obj:RefreshData(false)
 
-					-- Target NPC/Mob from step text
-					local stepInfo = oDisplay:GetCurrentStepInfo()
-					local stepText = oDisplay:GetStepLabel()
-					if stepText then
-						-- Extract NPC names (magenta color = |c00ff00ff....|r)
-						local npcName = nil
-						for name in string.gfind(stepText, "|c00ff00ff(.-)$") do
-							npcName = string.gsub(name, "|r.*", "")
-							break
-						end
-						if not npcName then
+					-- Shift+Click = target NPC/mob from step
+					if IsShiftKeyDown() then
+						local stepText = oDisplay:GetStepLabel()
+						if stepText then
+							-- Extract NPC names (magenta = |c00ff00ff....|r)
 							for name in string.gfind(stepText, "|c00ff00ff(.-)%|r") do
-								npcName = name
-								break
+								if name and strlen(name) > 1 then
+									TargetByName(name, true)
+									if VG_Enhance then VG_Enhance:Log("TARGET", "Shift+Click target: " .. name) end
+									break
+								end
 							end
-						end
-						if npcName and strlen(npcName) > 1 then
-							TargetByName(npcName, true)
-						end
-					end
-
-					-- Set TomTom waypoint from step coordinates
-					if stepInfo and stepInfo.x and stepInfo.y and stepInfo.zone then
-						if TomTom and TomTom.AddMFWaypoint then
-							if TomTom.ClearCrazyArrow then
-								TomTom:ClearCrazyArrow()
-							end
-							local normX = stepInfo.x / 100
-							local normY = stepInfo.y / 100
-							TomTom:AddMFWaypoint(nil, stepInfo.zone, normX, normY, {
-								title = "VanillaGuide",
-								crazy = true,
-								persistent = false,
-								cleardistance = 10,
-								arrivaldistance = 15,
-							})
 						end
 					end
 				elseif arg1 == "RightButton" then
