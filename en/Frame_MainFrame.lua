@@ -633,39 +633,6 @@ function objMainFrame:new(fParent, tTexture, oSettings, oDisplay)
 					this:SetBackdropColor(.1, .1, .1, .5)
 				end
 			end)
-			sh:SetScript("OnHyperlinkClick", function()
-				local link = arg1
-				if not link then return end
-				if string.find(link, "^target:") then
-					local name = string.sub(link, 8)
-					if name and strlen(name) > 1 then
-						TargetByName(name, true)
-						if VG_Enhance then VG_Enhance:Log("TARGET", "Clicked target: " .. name) end
-					end
-				elseif string.find(link, "^coord:") then
-					local coordStr = string.sub(link, 7)
-					local x, y = nil, nil
-					for cx, cy in string.gfind(coordStr, "%[(%d+),(%d+)%]") do
-						x = tonumber(cx)
-						y = tonumber(cy)
-					end
-					if x and y and TomTom and TomTom.AddMFWaypoint then
-						if TomTom.ClearCrazyArrow then TomTom:ClearCrazyArrow() end
-						local stepInfo = oDisplay:GetCurrentStepInfo()
-						local zone = stepInfo and stepInfo.zone or nil
-						if zone then
-							TomTom:AddMFWaypoint(nil, zone, x/100, y/100, {
-								title = "VanillaGuide [" .. x .. "," .. y .. "]",
-								crazy = true,
-								persistent = false,
-								cleardistance = 10,
-								arrivaldistance = 15,
-							})
-							if VG_Enhance then VG_Enhance:Log("TOMTOM", "Clicked coord: " .. x .. "," .. y .. " zone: " .. zone) end
-						end
-					end
-				end
-			end)
 			sh:SetScript("OnMouseUp", function()
 				if arg1 == "LeftButton" then
 					local step = oDisplay:GetCurrentStep()
@@ -673,6 +640,33 @@ function objMainFrame:new(fParent, tTexture, oSettings, oDisplay)
 					local tx = strsub(this:GetName(), 11)
 					oDisplay:StepByID(tonumber(tx))
 					obj:RefreshData(false)
+
+					-- Shift+Click = cycle target NPCs/Mobs in this step
+					if IsShiftKeyDown() then
+						local stepInfo = oDisplay:GetCurrentStepInfo()
+						if stepInfo and stepInfo.npcs and getn(stepInfo.npcs) > 0 then
+							-- Cycle through NPCs
+							if not obj._npcCycleIndex then obj._npcCycleIndex = 0 end
+							if not obj._npcCycleStep then obj._npcCycleStep = 0 end
+							-- Reset cycle if step changed
+							if obj._npcCycleStep ~= oDisplay:GetCurrentStep() then
+								obj._npcCycleIndex = 0
+								obj._npcCycleStep = oDisplay:GetCurrentStep()
+							end
+							obj._npcCycleIndex = obj._npcCycleIndex + 1
+							if obj._npcCycleIndex > getn(stepInfo.npcs) then
+								obj._npcCycleIndex = 1
+							end
+							local name = stepInfo.npcs[obj._npcCycleIndex]
+							if name and strlen(name) > 1 then
+								TargetByName(name, true)
+								if getn(stepInfo.npcs) > 1 then
+									DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00VG:|r Alvo: |cffff00ff" .. name .. "|r (" .. obj._npcCycleIndex .. "/" .. getn(stepInfo.npcs) .. ")")
+								end
+								if VG_Enhance then VG_Enhance:Log("TARGET", "Shift+Click target: " .. name .. " (" .. obj._npcCycleIndex .. "/" .. getn(stepInfo.npcs) .. ")") end
+							end
+						end
+					end
 				elseif arg1 == "RightButton" then
 					-- Right-click to skip/advance step
 					local db = VG_EnhanceDB or {}
