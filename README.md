@@ -8,6 +8,11 @@ Compatible with private servers: [SoloCraft.org](https://solocraft.org), Elysium
 
 ---
 
+> ### [Download Latest Release (v1.0)](https://github.com/GabHST/VanillaGuide-Enhanced/releases/latest)
+> **[Portugues (BR)](https://github.com/GabHST/VanillaGuide-Enhanced/releases/download/v1.0/VanillaGuide-Enhanced-PTBR.zip)** | **[English](https://github.com/GabHST/VanillaGuide-Enhanced/releases/download/v1.0/VanillaGuide-Enhanced-EN.zip)**
+
+---
+
 ## What's New (vs Original VanillaGuide)
 
 ### TomTom Navigation
