@@ -663,7 +663,8 @@ function objMainFrame:new(fParent, tTexture, oSettings, oDisplay)
 								end
 								local name = stepInfo.npcs[obj._npcCycleIndex]
 								if name and strlen(name) > 1 then
-									TargetByName(name, true)
+									-- Try exact match first, then partial
+									TargetByName(name)
 									DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00VG:|r Alvo: |cffff00ff" .. name .. "|r (" .. obj._npcCycleIndex .. "/" .. npcCount .. ")")
 									if VG_Enhance then VG_Enhance:Log("TARGET", "Targeting: " .. name) end
 								end
