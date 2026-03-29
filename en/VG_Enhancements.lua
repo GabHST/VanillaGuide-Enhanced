@@ -42,9 +42,82 @@ local function DB()
 			completedStepGray = true,
 			arrivalSound = true,
 			shareStep = true,
+			autoSkipCompleted = true,
 		}
 	end
+	if not VG_EnhanceDB.completedSteps then
+		VG_EnhanceDB.completedSteps = {}
+	end
 	return VG_EnhanceDB
+end
+
+---------------------------------------------------------
+-- QUEST MEMORY
+---------------------------------------------------------
+function VG_Enhance:MarkStepDone(guideID, step)
+	local db = DB()
+	db.completedSteps[(guideID or 0) .. ":" .. (step or 0)] = true
+end
+
+function VG_Enhance:IsStepDone(guideID, step)
+	local db = DB()
+	return db.completedSteps[(guideID or 0) .. ":" .. (step or 0)] == true
+end
+
+function VG_Enhance:IsQuestInLog(questName)
+	if not questName or strlen(questName) < 2 then return false, false end
+	local numEntries = GetNumQuestLogEntries()
+	for i = 1, numEntries do
+		local title, _, _, isHeader, _, isComplete = GetQuestLogTitle(i)
+		if not isHeader and title then
+			if string.find(title, questName, 1, true) then
+				return true, (isComplete == 1)
+			end
+		end
+	end
+	return false, false
+end
+
+function VG_Enhance:TryAutoSkip()
+	if not DB().autoSkipCompleted then return end
+	if not VGuide or not VGuide.Display or not VGuide.UI then return end
+
+	local skipped = 0
+	for i = 1, 10 do
+		local guideID = VGuide.Display:GetCurrentGuideID()
+		local step = VGuide.Display:GetCurrentStep()
+		local total = VGuide.Display:GetCurrentStepCount()
+		local stepText = VGuide.Display:GetStepLabel()
+		if not step or not total or step >= total then break end
+
+		local skip = false
+
+		-- Check our memory
+		if self:IsStepDone(guideID, step) then
+			skip = true
+		end
+
+		-- Check quest log: if step says "accept" a quest that's already in log, skip
+		if not skip and stepText then
+			for name in string.gfind(stepText, "|c0000ffff(.-)%|r") do
+				if name and strlen(name) > 1 then
+					local inLog = self:IsQuestInLog(name)
+					if inLog then skip = true end
+				end
+			end
+		end
+
+		if skip then
+			VGuide.Display:NextStep()
+			skipped = skipped + 1
+			self:Log("SKIP", "Auto-skipped step " .. step)
+		else
+			break
+		end
+	end
+	if skipped > 0 then
+		VGuide.UI.fMain:RefreshData(false)
+	end
 end
 
 ---------------------------------------------------------
@@ -147,22 +220,32 @@ function VG_Enhance:CreateAutoQuestFrame()
 		if event == "QUEST_FINISHED" or event == "QUEST_ACCEPTED" then
 			if f.questJustHandled then
 				f.questJustHandled = false
-				-- Advance to next step in VanillaGuide
 				if VGuide and VGuide.Display and VGuide.UI then
+					-- Mark current step as done
+					local gid = VGuide.Display:GetCurrentGuideID()
+					local stp = VGuide.Display:GetCurrentStep()
+					VG_Enhance:MarkStepDone(gid, stp)
+					-- Advance
 					VGuide.Display:NextStep()
 					VGuide.UI.fMain:RefreshData(false)
-					VG_Enhance:Log("STEP", "Auto-advanced step after quest interaction")
+					VG_Enhance:Log("STEP", "Auto-advanced after quest interaction")
+					-- Try skip already-done steps
+					VG_Enhance:TryAutoSkip()
 				end
 			end
 		end
 
-		-- Also advance on "Quest completed" system message
+		-- Also advance on "Quest completed" or "Objective complete" messages
 		if event == "UI_INFO_MESSAGE" then
-			if arg1 and string.find(arg1, "completed") then
+			if arg1 and (string.find(arg1, "completed") or string.find(arg1, "Completed")) then
 				if VGuide and VGuide.Display and VGuide.UI then
+					local gid = VGuide.Display:GetCurrentGuideID()
+					local stp = VGuide.Display:GetCurrentStep()
+					VG_Enhance:MarkStepDone(gid, stp)
 					VGuide.Display:NextStep()
 					VGuide.UI.fMain:RefreshData(false)
-					VG_Enhance:Log("STEP", "Auto-advanced step on quest completed message")
+					VG_Enhance:Log("STEP", "Auto-advanced on completed message")
+					VG_Enhance:TryAutoSkip()
 				end
 			end
 		end
@@ -475,6 +558,12 @@ SlashCmdList.VGENHANCE = function(msg)
 	elseif cmd == "sound" then
 		db.arrivalSound = not db.arrivalSound
 		DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00VG:|r Som ao chegar: " .. (db.arrivalSound and "|cff00ff00ON|r" or "|cffff0000OFF|r"))
+	elseif cmd == "autoskip" then
+		db.autoSkipCompleted = not db.autoSkipCompleted
+		DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00VG:|r Auto-pular feitos: " .. (db.autoSkipCompleted and "|cff00ff00ON|r" or "|cffff0000OFF|r"))
+	elseif cmd == "reset" then
+		db.completedSteps = {}
+		DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00VG:|r Memoria de steps resetada!")
 	elseif searchWord then
 		if VGuide and VGuide.Display then
 			VG_Enhance:SearchGuide(VGuide.Display, searchWord)
@@ -500,6 +589,8 @@ SlashCmdList.VGENHANCE = function(msg)
 		DEFAULT_CHAT_FRAME:AddMessage("  /vge colors    - Cores por tipo: " .. (db.stepTypeColors and "|cff00ff00ON|r" or "|cffff0000OFF|r"))
 		DEFAULT_CHAT_FRAME:AddMessage("  /vge gray      - Steps feitos cinza: " .. (db.completedStepGray and "|cff00ff00ON|r" or "|cffff0000OFF|r"))
 		DEFAULT_CHAT_FRAME:AddMessage("  /vge sound     - Som ao chegar: " .. (db.arrivalSound and "|cff00ff00ON|r" or "|cffff0000OFF|r"))
+		DEFAULT_CHAT_FRAME:AddMessage("  /vge autoskip  - Auto-pular feitos: " .. (db.autoSkipCompleted and "|cff00ff00ON|r" or "|cffff0000OFF|r"))
+		DEFAULT_CHAT_FRAME:AddMessage("  /vge reset     - Resetar memoria de steps")
 		DEFAULT_CHAT_FRAME:AddMessage("|cffaaaa00  Extras:|r")
 		DEFAULT_CHAT_FRAME:AddMessage("  /vge search <texto> - Buscar no guia")
 		DEFAULT_CHAT_FRAME:AddMessage("  /vge share          - Mostra step no chat")
