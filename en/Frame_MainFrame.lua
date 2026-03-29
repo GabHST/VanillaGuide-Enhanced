@@ -795,9 +795,32 @@ function objMainFrame:new(fParent, tTexture, oSettings, oDisplay)
 				v.textHeight = t.textHeight[k]
 				v.textWidth = t.textWidth[k]
 				if k == oDisplay:GetCurrentStep() then
+					-- Current step: bright highlight
 					v:SetBackdropColor(tColF.nR, tColF.nG, tColF.nB, tColF.nA)
+					v:SetTextColor(0.95, 0.95, 0.95, 1)
+				elseif k < oDisplay:GetCurrentStep() and VG_Enhance and VG_Enhance.initialized then
+					-- Completed steps: gray
+					local gr, gg, gb, ga = 0.35, 0.35, 0.35, 0.5
+					if VG_Enhance.GetCompletedStepColor then
+						local cr, cg, cb, ca = VG_Enhance:GetCompletedStepColor()
+						if cr then gr, gg, gb, ga = cr, cg, cb, ca end
+					end
+					v:SetBackdropColor(0.08, 0.08, 0.08, 0.4)
+					v:SetTextColor(gr, gg, gb, ga)
 				else
-					v:SetBackdropColor(.1, .1, .1, .5)
+					-- Future steps: color by type or default
+					local colored = false
+					if VG_Enhance and VG_Enhance.initialized and VG_Enhance.GetStepTypeColor and t[k] then
+						local sr, sg, sb, sa = VG_Enhance:GetStepTypeColor(t[k])
+						if sr then
+							v:SetBackdropColor(sr, sg, sb, sa)
+							colored = true
+						end
+					end
+					if not colored then
+						v:SetBackdropColor(.1, .1, .1, .5)
+					end
+					v:SetTextColor(0.59, 0.59, 0.59, 0.71)
 				end
 			else
 				v:Hide()
@@ -826,6 +849,10 @@ function objMainFrame:new(fParent, tTexture, oSettings, oDisplay)
 				cleardistance = 10,
 				arrivaldistance = 15,
 			})
+			-- Set waypoint for arrival sound
+			if VG_Enhance and VG_Enhance.SetWaypoint then
+				VG_Enhance:SetWaypoint(t.x, t.y)
+			end
 		end
 
 		-- MetaMap Integration (legacy)

@@ -35,9 +35,23 @@ Compatible with private servers: [SoloCraft.org](https://solocraft.org), Elysium
 - **Progress bar** - Visual bar showing zone completion percentage
 - **Time estimate** - Shows approximately how long until you finish the current zone
 
+### Visual Enhancements
+- **Step type colors** - Background tint by action: red = kill/do quest, blue = accept quest, green = turn in, dark = skip
+- **Completed steps gray** - Steps you already passed are grayed out so you see your progress
+- **Current step highlight** - Bright highlight on current step with full white text
+- **Minimap button** - Book icon on minimap. Left-click = toggle guide, Right-click = compact mode
+
+### Sound & Navigation
+- **Arrival sound** - Plays a sound when you arrive at the waypoint coordinates
+- **TomTom auto-waypoint** - Arrow automatically points to next step destination
+
+### Search & Share
+- **Search** - `/vge search keyword` to find any step in the current guide
+- **Share step** - `/vge share` prints current step to chat, `/vge share party` sends to group
+
 ### Compact Mode
 - Shrinks the guide window to show only the current step
-- Toggle with the button or `/vge compact`
+- Toggle via minimap button (right-click) or `/vge compact`
 
 ### Quality of Life
 - All starting zones accessible regardless of your character's race
@@ -77,13 +91,21 @@ Compatible with private servers: [SoloCraft.org](https://solocraft.org), Elysium
 | Command | Description |
 |---------|-------------|
 | `/vg` | Toggle guide window |
-| `/vge` | Show all enhancement options |
+| `/vge` | Show all options with current status |
 | `/vge combat` | Toggle combat transparency |
 | `/vge compact` | Toggle compact mode |
 | `/vge autoquest` | Toggle auto-accept/turn-in quests |
-| `/vge counter` | Toggle step counter display |
+| `/vge skip` | Toggle right-click to skip step |
+| `/vge counter` | Toggle step counter |
 | `/vge progress` | Toggle progress bar |
 | `/vge time` | Toggle time estimate |
+| `/vge colors` | Toggle step type color coding |
+| `/vge gray` | Toggle completed steps grayed out |
+| `/vge sound` | Toggle arrival sound |
+| `/vge search <text>` | Search for a step in current guide |
+| `/vge share` | Print current step to chat |
+| `/vge share party` | Send current step to party chat |
+| `/vge share say` | Send current step to /say |
 
 ---
 
