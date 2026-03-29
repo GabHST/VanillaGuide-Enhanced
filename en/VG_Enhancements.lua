@@ -115,21 +115,55 @@ function VG_Enhance:CreateAutoQuestFrame()
 	f:RegisterEvent("QUEST_DETAIL")
 	f:RegisterEvent("QUEST_PROGRESS")
 	f:RegisterEvent("QUEST_COMPLETE")
+	f:RegisterEvent("QUEST_FINISHED")
+	f:RegisterEvent("QUEST_ACCEPTED")
+	f:RegisterEvent("UI_INFO_MESSAGE")
+	f.questJustHandled = false
 	f:SetScript("OnEvent", function()
-		if not DB().autoAcceptTurnIn then return end
-		if event == "QUEST_DETAIL" then
-			VG_Enhance:Log("QUEST", "Auto-accepting quest")
-			AcceptQuest()
-		elseif event == "QUEST_PROGRESS" then
-			if IsQuestCompletable() then
-				VG_Enhance:Log("QUEST", "Auto-completing quest")
-				CompleteQuest()
+		-- Auto accept/turn-in
+		if DB().autoAcceptTurnIn then
+			if event == "QUEST_DETAIL" then
+				VG_Enhance:Log("QUEST", "Auto-accepting quest")
+				AcceptQuest()
+				f.questJustHandled = true
+			elseif event == "QUEST_PROGRESS" then
+				if IsQuestCompletable() then
+					VG_Enhance:Log("QUEST", "Auto-completing quest")
+					CompleteQuest()
+					f.questJustHandled = true
+				end
+			elseif event == "QUEST_COMPLETE" then
+				if GetNumQuestChoices() == 0 then
+					GetQuestReward()
+					f.questJustHandled = true
+				elseif GetNumQuestChoices() == 1 then
+					GetQuestReward(1)
+					f.questJustHandled = true
+				end
 			end
-		elseif event == "QUEST_COMPLETE" then
-			if GetNumQuestChoices() == 0 then
-				GetQuestReward()
-			elseif GetNumQuestChoices() == 1 then
-				GetQuestReward(1)
+		end
+
+		-- Auto-advance step after quest interaction
+		if event == "QUEST_FINISHED" or event == "QUEST_ACCEPTED" then
+			if f.questJustHandled then
+				f.questJustHandled = false
+				-- Advance to next step in VanillaGuide
+				if VGuide and VGuide.Display and VGuide.UI then
+					VGuide.Display:NextStep()
+					VGuide.UI.fMain:RefreshData(false)
+					VG_Enhance:Log("STEP", "Auto-advanced step after quest interaction")
+				end
+			end
+		end
+
+		-- Also advance on "Quest completed" system message
+		if event == "UI_INFO_MESSAGE" then
+			if arg1 and string.find(arg1, "completed") then
+				if VGuide and VGuide.Display and VGuide.UI then
+					VGuide.Display:NextStep()
+					VGuide.UI.fMain:RefreshData(false)
+					VG_Enhance:Log("STEP", "Auto-advanced step on quest completed message")
+				end
 			end
 		end
 	end)
