@@ -36,7 +36,7 @@ local function DB()
 			autoAcceptTurnIn = true,
 			rightClickSkip = true,
 			showStepCounter = true,
-			showProgressBar = true,
+			showProgressBar = false,
 			timeEstimate = true,
 			stepTypeColors = true,
 			completedStepGray = true,
@@ -97,12 +97,28 @@ function VG_Enhance:TryAutoSkip()
 			skip = true
 		end
 
-		-- Check quest log: if step says "accept" a quest that's already in log, skip
+		-- Check quest log: only skip if step is PURELY about accepting quests
+		-- (no turn-in #IN, no objectives #DO, no items #ITEM to collect)
 		if not skip and stepText then
-			for name in string.gfind(stepText, "|c0000ffff(.-)%|r") do
-				if name and strlen(name) > 1 then
-					local inLog = self:IsQuestInLog(name)
-					if inLog then skip = true end
+			local hasGet = string.find(stepText, "|c0000ffff", 1, true)
+			local hasTurnIn = string.find(stepText, "|c0000ff00", 1, true)
+			local hasObjective = string.find(stepText, "|c000079d2", 1, true)
+			local hasItem = string.find(stepText, "|c00fca742", 1, true)
+
+			-- Only skip if step has #GET quests and NO turn-ins/objectives/items
+			if hasGet and not hasTurnIn and not hasObjective and not hasItem then
+				local allInLog = true
+				local foundAny = false
+				for name in string.gfind(stepText, "|c0000ffff(.-)%|r") do
+					if name and strlen(name) > 1 then
+						foundAny = true
+						if not self:IsQuestInLog(name) then
+							allInLog = false
+						end
+					end
+				end
+				if foundAny and allInLog then
+					skip = true
 				end
 			end
 		end
@@ -121,6 +137,240 @@ function VG_Enhance:TryAutoSkip()
 end
 
 ---------------------------------------------------------
+-- NAVIGATE: point pfQuest arrow to current step
+---------------------------------------------------------
+VG_Enhance._navIdx = 0
+VG_Enhance._navStep = 0
+
+function VG_Enhance:Navigate()
+	if not VGuide or not VGuide.Display then
+		DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00VG:|r Guide nao carregado.")
+		return
+	end
+
+	local stepInfo = VGuide.Display:GetCurrentStepInfo()
+	local stepText = VGuide.Display:GetStepLabel() or ""
+	local curStep = VGuide.Display:GetCurrentStep() or 0
+
+	if DebugLog then DebugLog("VG", "Navigate called. step=" .. curStep .. " textLen=" .. strlen(stepText)) end
+
+	-- Build target list
+	local targets = {}
+	local seen = {}
+
+	local function add(typ, name, extra)
+		if not name or strlen(name) < 2 or seen[name] then return end
+		seen[name] = true
+		table.insert(targets, {type=typ, name=name, extra=extra})
+	end
+
+	local function parseColorTags(text, color, typ)
+		local p = 1
+		while true do
+			local s = string.find(text, color, p, true)
+			if not s then break end
+			local ns = s + strlen(color)
+			local e = string.find(text, "|r", ns, true)
+			if not e then break end
+			local val = string.sub(text, ns, e - 1)
+			val = string.gsub(val, "^%[", "")
+			val = string.gsub(val, "%]$", "")
+			add(typ, val)
+			p = e + 1
+		end
+	end
+
+	-- Step coordinate
+	if stepInfo and stepInfo.x and stepInfo.y then
+		add("COORD", (stepInfo.zone or "?") .. " [" .. stepInfo.x .. "," .. stepInfo.y .. "]")
+	end
+
+	-- NPCs (pre-parsed + magenta color)
+	if stepInfo and stepInfo.npcs then
+		for _, n in ipairs(stepInfo.npcs) do add("NPC", n) end
+	end
+	parseColorTags(stepText, "|c00ff00ff", "NPC")
+
+	-- Quest objectives (#DO blue)
+	parseColorTags(stepText, "|c000079d2", "ALVO")
+
+	-- Items -> mobs via pfDB
+	if pfDB and pfDB.items and pfDatabase then
+		local p = 1
+		while true do
+			local s = string.find(stepText, "|c00fca742", p, true)
+			if not s then break end
+			local ns = s + 10
+			local e = string.find(stepText, "|r", ns, true)
+			if not e then break end
+			local raw = string.sub(stepText, ns, e - 1)
+			raw = string.gsub(raw, "^%[", "")
+			raw = string.gsub(raw, "%]$", "")
+			if raw and strlen(raw) > 1 then
+				local ids = pfDatabase:GetIDByName(raw, "items")
+				if ids then
+					for id in pairs(ids) do
+						local idata = pfDB.items.data[id]
+						if idata and idata["U"] then
+							for uid, _ in pairs(idata["U"]) do
+								add("MOB_DROP", pfDB.units.loc[uid], raw)
+							end
+						end
+						break
+					end
+				end
+			end
+			p = e + 1
+		end
+	end
+
+	local total = table.getn(targets)
+	if DebugLog then DebugLog("VG", "Targets found: " .. total) end
+
+	if total == 0 then
+		DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00VG:|r Nenhum alvo neste passo.")
+		return
+	end
+
+	-- Cycle
+	if self._navStep ~= curStep then
+		self._navIdx = 0
+		self._navStep = curStep
+	end
+	self._navIdx = self._navIdx + 1
+	if self._navIdx > total then self._navIdx = 1 end
+
+	local pick = targets[self._navIdx]
+
+	-- Target NPC/mob if nearby
+	if pick.type ~= "COORD" then
+		TargetByName(pick.name, true)
+	end
+
+	-- Point pfQuest arrow
+	local pointed = false
+
+	-- 1) Search existing pfQuest route
+	if pfQuest and pfQuest.route and pfQuest.route.coords then
+		for _, data in pairs(pfQuest.route.coords) do
+			if data[3] then
+				local sp = data[3].spawn or ""
+				local ti = data[3].title or ""
+				if sp == pick.name or string.find(ti, pick.name, 1, true) then
+					pfQuest.route.SetTarget(data[3])
+					pointed = true
+					break
+				end
+			end
+		end
+	end
+
+	-- 2) Look up in pfDB and inject
+	if not pointed and pfQuest_PointTo then
+		if pick.type == "COORD" and stepInfo and stepInfo.x and stepInfo.y then
+			-- Find zone ID (cached)
+			local zid = VG_Enhance:GetZoneID(stepInfo.zone)
+			if zid > 0 then
+				pfQuest_PointTo(stepInfo.x, stepInfo.y, zid, pick.name, "Guide")
+				pointed = true
+			end
+		elseif pfDB and pfDB.units and pfDatabase then
+			local ids = pfDatabase:GetIDByName(pick.name, "units")
+			if ids then
+				for uid in pairs(ids) do
+					local ud = pfDB.units.data[uid]
+					if ud and ud.coords and ud.coords[1] then
+						local ux, uy, uz = unpack(ud.coords[1])
+						if ux and uy and uz and uz > 0 then
+							pfQuest_PointTo(ux, uy, uz, pick.name, pick.type)
+							pointed = true
+						end
+					end
+					break
+				end
+			end
+		end
+	end
+
+	-- Chat
+	local labels = {COORD="|cffff0000COORD|r", NPC="|cffff00ffNPC|r", ALVO="|cff4444ffALVO|r", MOB_DROP="|cffff8800DROP|r"}
+	local lbl = labels[pick.type] or pick.type
+	local ext = pick.extra and " (" .. pick.extra .. ")" or ""
+	local arrow = pointed and " |cff00ff00-> SETA|r" or ""
+	DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00VG:|r " .. lbl .. " " .. pick.name .. ext .. " [" .. self._navIdx .. "/" .. total .. "]" .. arrow)
+	if DebugLog then DebugLog("VG", pick.type .. ": " .. pick.name .. " pointed=" .. (pointed and "Y" or "N")) end
+end
+
+---------------------------------------------------------
+-- AUTO-GPS: point pfQuest arrow to current step automatically
+---------------------------------------------------------
+VG_Enhance._zoneCache = {}
+function VG_Enhance:GetZoneID(zoneName)
+	if not zoneName then return 0 end
+	if self._zoneCache[zoneName] then return self._zoneCache[zoneName] end
+	if pfDB and pfDB.zones and pfDB.zones.loc then
+		for id, name in pairs(pfDB.zones.loc) do
+			if name == zoneName then
+				self._zoneCache[zoneName] = id
+				return id
+			end
+		end
+	end
+	return 0
+end
+
+function VG_Enhance:PointArrowToCurrentStep()
+	if not VGuide or not VGuide.Display then return end
+	local stepInfo = VGuide.Display:GetCurrentStepInfo()
+	if not stepInfo or not stepInfo.x or not stepInfo.y then return end
+
+	local zid = self:GetZoneID(stepInfo.zone)
+
+	if zid > 0 and pfQuest_PointTo then
+		local stepNum = VGuide.Display:GetCurrentStep() or 0
+		local stepText = VGuide.Display:GetStepLabel() or ""
+		-- Clean step text for display (remove color codes)
+		local clean = string.gsub(stepText, "|c%x%x%x%x%x%x%x%x", "")
+		clean = string.gsub(clean, "|r", "")
+		if strlen(clean) > 50 then clean = string.sub(clean, 1, 47) .. "..." end
+
+		pfQuest_PointTo(stepInfo.x, stepInfo.y, zid, "Passo " .. stepNum, clean)
+		if DebugLog then DebugLog("VG", "Auto-GPS: step " .. stepNum .. " -> [" .. stepInfo.x .. "," .. stepInfo.y .. "] " .. (stepInfo.zone or "")) end
+	end
+end
+
+function VG_Enhance:CreateAutoGPS()
+	-- Monitor step changes and auto-point arrow
+	self._lastGPSStep = nil
+	self._lastGPSGuide = nil
+
+	local gps = CreateFrame("Frame", "VG_AutoGPS", UIParent)
+	gps.elapsed = 0
+	gps:SetScript("OnUpdate", function()
+		gps.elapsed = gps.elapsed + arg1
+		if gps.elapsed < 5 then return end
+		gps.elapsed = 0
+
+		if not VGuide or not VGuide.Display then return end
+		local curStep = VGuide.Display:GetCurrentStep()
+		local curGuide = VGuide.Display:GetCurrentGuideID()
+
+		-- Detect step change -> auto-point arrow
+		if curStep ~= VG_Enhance._lastGPSStep or curGuide ~= VG_Enhance._lastGPSGuide then
+			VG_Enhance._lastGPSStep = curStep
+			VG_Enhance._lastGPSGuide = curGuide
+			VG_Enhance:PointArrowToCurrentStep()
+		end
+
+		-- silent arrival tracking (internal only)
+		if pfQuest and pfQuest.route and pfQuest.route._lockedNode then
+			local node = pfQuest.route._lockedNode
+			VG_Enhance._arrived = node[4] and node[4] < 1.7 or false
+		end
+	end)
+end
+
+---------------------------------------------------------
 -- INITIALIZE
 ---------------------------------------------------------
 function VG_Enhance:Init()
@@ -133,8 +383,60 @@ function VG_Enhance:Init()
 	self:CreateProgressBarFrame()
 	self:CreateMinimapButton()
 	self:CreateArrivalChecker()
+
+	-- Quest objective tracker: refresh on quest log events only (no OnUpdate to avoid crashes)
+	local objTracker = CreateFrame("Frame", "VG_ObjTracker", UIParent)
+	objTracker:RegisterEvent("QUEST_LOG_UPDATE")
+	objTracker:RegisterEvent("UNIT_QUEST_LOG_CHANGED")
+	objTracker:SetScript("OnEvent", function()
+		if VGuide and VGuide.UI and VGuide.UI.fMain then
+			VGuide.UI.fMain:RefreshStepFrameLabel()
+		end
+	end)
+
+	-- Hook Shift+Click on StepFrame (compact mode)
+	local stepFrame = getglobal("VG_MainFrame_StepFrame")
+	if stepFrame then
+		stepFrame:EnableMouse(true)
+		stepFrame:SetScript("OnMouseUp", function()
+			if arg1 == "LeftButton" and IsShiftKeyDown() then
+				VG_Enhance:Navigate()
+			end
+		end)
+	end
+
+	-- Also hook the main frame for shift+click anywhere on VG
+	local mainFrame = getglobal("VG_MainFrame")
+	if mainFrame then
+		local origOnMouseUp = mainFrame:GetScript("OnMouseUp")
+		mainFrame:SetScript("OnMouseUp", function()
+			if arg1 == "LeftButton" and IsShiftKeyDown() and not this.isMoving then
+				VG_Enhance:Navigate()
+				return
+			end
+			if origOnMouseUp then origOnMouseUp() end
+		end)
+	end
+
 	self.initialized = true
 	self:Log("INIT", "VG_Enhance initialized successfully")
+
+	-- Defer heavy operations to 10s after login to avoid freeze
+	local deferFrame = CreateFrame("Frame")
+	deferFrame.elapsed = 0
+	deferFrame.done = false
+	deferFrame:SetScript("OnUpdate", function()
+		if this.done then return end
+		this.elapsed = this.elapsed + arg1
+		if this.elapsed < 10 then return end
+		this.done = true
+		this:SetScript("OnUpdate", nil)
+		-- Now safe to do heavy stuff
+		VG_Enhance:CreateAutoGPS()
+		VG_Enhance:PointArrowToCurrentStep()
+		local vgVer = GetAddOnMetadata("VanillaGuide", "Version") or "?"
+		DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00VG Enhanced|r v" .. vgVer .. " | Shift+Click = seta")
+	end)
 end
 
 ---------------------------------------------------------
@@ -191,27 +493,102 @@ function VG_Enhance:CreateAutoQuestFrame()
 	f:RegisterEvent("QUEST_FINISHED")
 	f:RegisterEvent("QUEST_ACCEPTED")
 	f:RegisterEvent("UI_INFO_MESSAGE")
+	f:RegisterEvent("QUEST_GREETING")
+	f:RegisterEvent("TRAINER_SHOW")
+	f:RegisterEvent("TRAINER_CLOSED")
+	f:RegisterEvent("SPELLS_CHANGED")
+	f:RegisterEvent("MERCHANT_SHOW")
+	f:RegisterEvent("MERCHANT_CLOSED")
+	f:RegisterEvent("CONFIRM_BINDER")
 	f.questJustHandled = false
+	f.greetingSelected = false
+	f.trainerVisited = false
+	f.merchantVisited = false
+
+	-- Helper: check if current step mentions a quest name
+	local function stepMentionsQuest(questName)
+		if not questName or not VGuide or not VGuide.Display then return false end
+		local text = VGuide.Display:GetStepLabel() or ""
+		return string.find(text, questName, 1, true) and true or false
+	end
 	f:SetScript("OnEvent", function()
-		-- Auto accept/turn-in
+		-- Auto accept/turn-in (ONLY quests mentioned in current step)
 		if DB().autoAcceptTurnIn then
-			if event == "QUEST_DETAIL" then
-				VG_Enhance:Log("QUEST", "Auto-accepting quest")
-				AcceptQuest()
-				f.questJustHandled = true
+			if event == "QUEST_GREETING" then
+				-- NPC has multiple quests listed. Select the one matching current step.
+				local stepText = (VGuide and VGuide.Display and VGuide.Display:GetStepLabel()) or ""
+				local lt = strlower(stepText)
+				local isAccept = string.find(lt, "aceite", 1, true)
+				local isTurnIn = string.find(lt, "entregue", 1, true)
+
+				-- Try active quests first (turn-ins)
+				local numActive = GetNumActiveQuests() or 0
+				for i = 1, numActive do
+					local title = GetActiveTitle(i)
+					if title and isTurnIn and string.find(stepText, title, 1, true) then
+						SelectActiveQuest(i)
+						if DebugLog then DebugLog("QUEST", "GREETING: selected active quest: " .. title) end
+						return
+					end
+				end
+				-- No fallback for active quests either: must match by name
+
+				-- Try available quests (accepts) - match by name in step text
+				local numAvail = GetNumAvailableQuests() or 0
+				-- Strip color codes from step text for matching
+				local cleanStep = string.gsub(stepText, "|c%x%x%x%x%x%x%x%x", "")
+				cleanStep = string.gsub(cleanStep, "|r", "")
+				for i = 1, numAvail do
+					local title = GetAvailableTitle(i)
+					if title and isAccept and string.find(cleanStep, title, 1, true) then
+						f.greetingSelected = true
+						SelectAvailableQuest(i)
+						if DebugLog then DebugLog("QUEST", "GREETING: matched quest: " .. title) end
+						return
+					end
+				end
+				-- No fallback: only accept quests that match step text by name
+				if DebugLog then DebugLog("QUEST", "GREETING: no name match in available quests") end
+
+				if DebugLog then DebugLog("QUEST", "GREETING: no match. avail=" .. numAvail .. " active=" .. numActive) end
+			elseif event == "QUEST_DETAIL" then
+				local qTitle = GetTitleText() or ""
+				local text = (VGuide and VGuide.Display and VGuide.Display:GetStepLabel()) or ""
+				local clean = string.gsub(text, "|c%x%x%x%x%x%x%x%x", "")
+				clean = string.gsub(clean, "|r", "")
+				local isAccept = string.find(strlower(clean), "aceite", 1, true)
+				local nameMatch = string.find(clean, qTitle, 1, true)
+
+				-- Accept if: came from our GREETING selection, OR step mentions exact name
+				if f.greetingSelected or (isAccept and nameMatch) then
+					f.greetingSelected = false
+					if DebugLog then DebugLog("QUEST", "Auto-accepting: " .. qTitle) end
+					AcceptQuest()
+					f.questJustHandled = true
+				else
+					f.greetingSelected = false
+				end
 			elseif event == "QUEST_PROGRESS" then
 				if IsQuestCompletable() then
-					VG_Enhance:Log("QUEST", "Auto-completing quest")
-					CompleteQuest()
-					f.questJustHandled = true
+					-- Cooldown to prevent loop
+					if not f.lastComplete or f.lastComplete + 2 < GetTime() then
+						f.lastComplete = GetTime()
+						VG_Enhance:Log("QUEST", "Auto-completing quest")
+						CompleteQuest()
+						f.questJustHandled = true
+					end
 				end
 			elseif event == "QUEST_COMPLETE" then
-				if GetNumQuestChoices() == 0 then
-					GetQuestReward()
-					f.questJustHandled = true
-				elseif GetNumQuestChoices() == 1 then
-					GetQuestReward(1)
-					f.questJustHandled = true
+				-- Cooldown to prevent loop
+				if not f.lastReward or f.lastReward + 2 < GetTime() then
+					f.lastReward = GetTime()
+					if GetNumQuestChoices() == 0 then
+						GetQuestReward()
+						f.questJustHandled = true
+					elseif GetNumQuestChoices() == 1 then
+						GetQuestReward(1)
+						f.questJustHandled = true
+					end
 				end
 			end
 		end
@@ -230,23 +607,76 @@ function VG_Enhance:CreateAutoQuestFrame()
 					VGuide.UI.fMain:RefreshData(false)
 					VG_Enhance:Log("STEP", "Auto-advanced after quest interaction")
 					-- Try skip already-done steps
-					VG_Enhance:TryAutoSkip()
+					-- TryAutoSkip disabled: was causing steps to skip incorrectly
 				end
 			end
 		end
 
-		-- Also advance on "Quest completed" or "Objective complete" messages
-		if event == "UI_INFO_MESSAGE" then
-			if arg1 and (string.find(arg1, "completed") or string.find(arg1, "Completed")) then
-				if VGuide and VGuide.Display and VGuide.UI then
-					local gid = VGuide.Display:GetCurrentGuideID()
-					local stp = VGuide.Display:GetCurrentStep()
-					VG_Enhance:MarkStepDone(gid, stp)
-					VGuide.Display:NextStep()
-					VGuide.UI.fMain:RefreshData(false)
-					VG_Enhance:Log("STEP", "Auto-advanced on completed message")
-					VG_Enhance:TryAutoSkip()
+		-- Helper: check if current step text contains keywords
+		local function stepContains(...)
+			if not VGuide or not VGuide.Display then return false end
+			local text = VGuide.Display:GetStepLabel() or ""
+			text = strlower(text)
+			for i = 1, arg.n do
+				if string.find(text, strlower(arg[i]), 1, true) then return true end
+			end
+			return false
+		end
+
+		-- Helper: advance step safely
+		local function advanceStep(reason)
+			if not VGuide or not VGuide.Display or not VGuide.UI then return end
+			local gid = VGuide.Display:GetCurrentGuideID()
+			local stp = VGuide.Display:GetCurrentStep()
+			VG_Enhance:MarkStepDone(gid, stp)
+			VGuide.Display:NextStep()
+			VGuide.UI.fMain:RefreshData(false)
+			VG_Enhance:Log("STEP", "Auto-advanced: " .. reason)
+			VG_Enhance:TryAutoSkip()
+		end
+
+		-- Trainer: auto-advance if step mentions trainer/habilidades/magias/skills
+		if event == "TRAINER_SHOW" then
+			f.trainerVisited = true
+		elseif event == "TRAINER_CLOSED" then
+			if f.trainerVisited then
+				f.trainerVisited = false
+				if stepContains("trainer", "habilidades", "magias", "novas magias", "Aprenda", "treinamento", "Swords", "Weapon Master") then
+					advanceStep("trainer closed")
 				end
+			end
+		end
+
+		-- Spells changed: if step is about learning skills and we just visited trainer
+		if event == "SPELLS_CHANGED" then
+			if stepContains("Aprenda", "habilidades", "magias", "treinamento", "Swords") then
+				advanceStep("spell learned")
+			end
+		end
+
+		-- Merchant: auto-advance if step mentions buying/compre/trade supplies
+		if event == "MERCHANT_SHOW" then
+			f.merchantVisited = true
+		elseif event == "MERCHANT_CLOSED" then
+			if f.merchantVisited then
+				f.merchantVisited = false
+				if stepContains("Compre", "Trade Supplies", "compre") then
+					advanceStep("merchant closed")
+				end
+			end
+		end
+
+		-- Hearthstone: auto-advance if step mentions Hearthstone/hearth
+		if event == "CONFIRM_BINDER" or event == "HEARTHSTONE_BOUND" then
+			if stepContains("Hearthstone", "hearth", "Hearth") then
+				advanceStep("hearthstone set")
+			end
+		end
+
+		-- First Aid trainer: advance if step mentions First Aid
+		if event == "TRAINER_CLOSED" then
+			if stepContains("First Aid") then
+				advanceStep("first aid trainer")
 			end
 		end
 	end)
@@ -274,8 +704,9 @@ function VG_Enhance:UpdateStepCounter(current, total)
 		return
 	end
 	local f = getglobal("VG_StepCounter")
-	if f and current and total then
-		f.text:SetText("Passo " .. current .. "/" .. total)
+	if f and current and total and total > 0 then
+		local pct = math.floor((current / total) * 100)
+		f.text:SetText("|cff00ff00" .. current .. "|r/|cffaaaaaa" .. total .. "|r  |cffffcc00" .. pct .. "%|r")
 		f:Show()
 	end
 end

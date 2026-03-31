@@ -68,17 +68,27 @@ function objDisplay:new(oSettings, oGuideTables)
 		--Dtprint(t, 4)
 		local count = 0
 		obj.GuideTitle = t.title
-		obj.StepFrameDisplay = t.items[obj.CurrentStep].str
+		local curItem = t.items[obj.CurrentStep]
+		obj.StepFrameDisplay = curItem.str
+		if curItem.tip and strlen(curItem.tip) > 0 then
+			obj.StepFrameDisplay = obj.StepFrameDisplay .. "\n|cff888888> " .. curItem.tip .. "|r"
+		end
 		obj:ScrollFrameDisplayWipe()
 		obj:StepInfoDisplayWipe()
 		for k,v in ipairs(t.items) do
 			count = count + 1
-			obj.ScrollFrameDisplay[k] = v.str
+			-- Append tip to display text if present
+			local displayStr = v.str
+			if v.tip and strlen(v.tip) > 0 then
+				displayStr = displayStr .. "\n|cff888888> " .. v.tip .. "|r"
+			end
+			obj.ScrollFrameDisplay[k] = displayStr
 			obj.StepInfoDisplay[k] = {}
 			obj.StepInfoDisplay[k].x = v.x or nil
 			obj.StepInfoDisplay[k].y = v.y or nil
 			obj.StepInfoDisplay[k].zone = v.zone or nil
 			obj.StepInfoDisplay[k].npcs = v.npcs or {}
+			obj.StepInfoDisplay[k].tip = v.tip or nil
 		end
 		obj.CurrentStepCount = count
 		obj:UpdateGuideValuesSettings()

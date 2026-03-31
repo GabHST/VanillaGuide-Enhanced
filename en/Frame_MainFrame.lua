@@ -278,12 +278,30 @@ function objMainFrame:new(fParent, tTexture, oSettings, oDisplay)
     end
     local function Render_MFStepLabel(fParent, sName, tUI)
 		local tColor = tUI.StepFrameTextColor
+		-- Current step label (takes as much space as needed)
 		local fs = fParent:CreateFontString(sName, "ARTWORK", "GameFontNormalSmall")
 		fs:SetPoint("TOPLEFT", fParent, "TOPLEFT", 5, -5)
-		fs:SetPoint("BOTTOMRIGHT", fParent, "BOTTOMRIGHT", -5, 5)
+		fs:SetPoint("RIGHT", fParent, "RIGHT", -5, 0)
 		fs:SetTextColor(tColor.nR, tColor.nG, tColor.nB, tColor.nA)
 		fs:SetJustifyH("LEFT")
 		fs:SetJustifyV("TOP")
+
+		-- Separator line (positioned dynamically in RefreshStepFrameLabel)
+		local sep = fParent:CreateTexture(nil, "ARTWORK")
+		sep:SetTexture(1, 1, 1, 0.15)
+		sep:SetHeight(1)
+		sep:SetPoint("LEFT", fParent, "LEFT", 5, 0)
+		sep:SetPoint("RIGHT", fParent, "RIGHT", -5, 0)
+		fParent.separator = sep
+
+		-- Next step label (dimmed, below separator)
+		local fs2 = fParent:CreateFontString(sName .. "Next", "ARTWORK", "GameFontNormalSmall")
+		fs2:SetPoint("RIGHT", fParent, "RIGHT", -5, 0)
+		fs2:SetTextColor(tColor.nR * 0.5, tColor.nG * 0.5, tColor.nB * 0.5, 0.6)
+		fs2:SetJustifyH("LEFT")
+		fs2:SetJustifyV("TOP")
+		fParent.nextLabel = fs2
+
 		return fs
     end
 
@@ -576,7 +594,49 @@ function objMainFrame:new(fParent, tTexture, oSettings, oDisplay)
 	obj.RefreshStepFrameLabel = function(self)
 		local s = oDisplay:GetStepLabel()
 		local fs = obj.tWidgets.fs_StepFrame
-		fs:SetText(s)
+		local curStep = oDisplay:GetCurrentStep() or 1
+		local totalSteps = oDisplay:GetCurrentStepCount() or 1
+		local pct = math.floor((curStep / totalSteps) * 100)
+
+		-- Current step: bright with step counter
+		fs:SetText("|cff00ff00[" .. curStep .. "/" .. totalSteps .. "]|r " .. s)
+		fs:SetTextColor(0.95, 0.95, 0.90, 1)
+
+		-- Position separator below current step text
+		local stepFrame = obj.tWidgets.frame_StepFrame
+		if stepFrame and stepFrame.separator then
+			local textHeight = fs:GetHeight() or 40
+			stepFrame.separator:ClearAllPoints()
+			stepFrame.separator:SetPoint("TOPLEFT", fs, "BOTTOMLEFT", 0, -3)
+			stepFrame.separator:SetPoint("RIGHT", stepFrame, "RIGHT", -5, 0)
+		end
+		if stepFrame and stepFrame.nextLabel then
+			stepFrame.nextLabel:ClearAllPoints()
+			stepFrame.nextLabel:SetPoint("TOPLEFT", stepFrame.separator, "BOTTOMLEFT", 0, -3)
+			stepFrame.nextLabel:SetPoint("RIGHT", stepFrame, "RIGHT", -5, 0)
+		end
+
+		-- Next step: dimmed
+		if stepFrame and stepFrame.nextLabel then
+			local nextStep = curStep + 1
+			if nextStep <= totalSteps then
+				local scrollDisplay = oDisplay:GetScrollFrameDisplay()
+				if scrollDisplay and scrollDisplay[nextStep] then
+					stepFrame.nextLabel:SetText("|cff666666[" .. nextStep .. "]|r " .. scrollDisplay[nextStep])
+					stepFrame.nextLabel:SetTextColor(0.45, 0.45, 0.40, 0.55)
+					stepFrame.nextLabel:Show()
+					if stepFrame.separator then stepFrame.separator:Show() end
+				else
+					stepFrame.nextLabel:Hide()
+					if stepFrame.separator then stepFrame.separator:Hide() end
+				end
+			else
+				stepFrame.nextLabel:SetText("|cff444444Fim do guide.|r")
+				stepFrame.nextLabel:SetTextColor(0.4, 0.4, 0.35, 0.5)
+				stepFrame.nextLabel:Show()
+				if stepFrame.separator then stepFrame.separator:Show() end
+			end
+		end
 	end
 
 	obj.RefreshStepNumberFrameLabel = function(self)
@@ -635,44 +695,177 @@ function objMainFrame:new(fParent, tTexture, oSettings, oDisplay)
 			end)
 			sh:SetScript("OnMouseUp", function()
 				if arg1 == "LeftButton" then
+					-- Detect shift BEFORE changing step (frame may be invalidated after)
+					local wasShift = IsShiftKeyDown()
+
 					local step = oDisplay:GetCurrentStep()
-					this:GetParent().Entries[step]:SetBackdropColor(.1, .1, .1, .5)
+					if step and this:GetParent().Entries and this:GetParent().Entries[step] then
+						this:GetParent().Entries[step]:SetBackdropColor(.1, .1, .1, .5)
+					end
 					local tx = strsub(this:GetName(), 11)
 					oDisplay:StepByID(tonumber(tx))
 					obj:RefreshData(false)
 
-					-- Shift+Click = cycle target NPCs/Mobs in this step
-					if IsShiftKeyDown() then
+					-- Shift+Click = navigate via VG_Enhance
+					if wasShift and VG_Enhance and VG_Enhance.Navigate then
+						VG_Enhance:Navigate()
+					end
+					if false then -- old code disabled
 						local stepInfo = oDisplay:GetCurrentStepInfo()
-						if stepInfo and stepInfo.npcs then
-							local npcCount = 0
-							for _ in ipairs(stepInfo.npcs) do npcCount = npcCount + 1 end
+						local stepText = oDisplay:GetStepLabel() or ""
+						if DebugLog then DebugLog("VG", "stepText len=" .. strlen(stepText) .. " hasInfo=" .. (stepInfo and "Y" or "N") .. " x=" .. (stepInfo and stepInfo.x or "nil") .. " y=" .. (stepInfo and stepInfo.y or "nil")) end
+						local targets = {}
+						local seen = {}
 
-							if VG_Enhance then VG_Enhance:Log("TARGET", "Shift+Click: found " .. npcCount .. " NPCs in step " .. oDisplay:GetCurrentStep()) end
+						-- Helper to add target without duplicates
+						local function addTarget(typ, name, extra)
+							if not name or strlen(name) < 2 or seen[name] then return end
+							seen[name] = true
+							table.insert(targets, { type = typ, name = name, extra = extra })
+						end
 
-							if npcCount > 0 then
-								if not obj._npcCycleIndex then obj._npcCycleIndex = 0 end
-								if not obj._npcCycleStep then obj._npcCycleStep = 0 end
-								if obj._npcCycleStep ~= oDisplay:GetCurrentStep() then
-									obj._npcCycleIndex = 0
-									obj._npcCycleStep = oDisplay:GetCurrentStep()
-								end
-								obj._npcCycleIndex = obj._npcCycleIndex + 1
-								if obj._npcCycleIndex > npcCount then
-									obj._npcCycleIndex = 1
-								end
-								local name = stepInfo.npcs[obj._npcCycleIndex]
-								if name and strlen(name) > 1 then
-									-- Try exact match first, then partial
-									TargetByName(name)
-									DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00VG:|r Alvo: |cffff00ff" .. name .. "|r (" .. obj._npcCycleIndex .. "/" .. npcCount .. ")")
-									if VG_Enhance then VG_Enhance:Log("TARGET", "Targeting: " .. name) end
-								end
-							else
-								if VG_Enhance then VG_Enhance:Log("TARGET", "No NPCs in this step") end
+						-- Helper to extract names between color code and |r
+						local function parseColor(text, colorCode, typ)
+							local pos = 1
+							while true do
+								local s1 = string.find(text, colorCode, pos, true)
+								if not s1 then break end
+								local ns = s1 + strlen(colorCode)
+								local s2 = string.find(text, "|r", ns, true)
+								if not s2 then break end
+								local name = string.sub(text, ns, s2 - 1)
+								-- strip brackets if present
+								name = string.gsub(name, "^%[", "")
+								name = string.gsub(name, "%]$", "")
+								addTarget(typ, name)
+								pos = s2 + 1
 							end
+						end
+
+						-- 1) Step coordinate (always first - this is the DIRECTION)
+						if stepInfo and stepInfo.x and stepInfo.y then
+							addTarget("COORD", (stepInfo.zone or "?") .. " [" .. stepInfo.x .. "," .. stepInfo.y .. "]")
+						end
+
+						-- 2) NPCs from pre-parsed tags
+						if stepInfo and stepInfo.npcs then
+							for _, n in ipairs(stepInfo.npcs) do addTarget("NPC", n) end
+						end
+
+						-- 3) NPCs from colorized text (magenta)
+						parseColor(stepText, "|c00ff00ff", "NPC")
+
+						-- 4) Quest objectives (blue #DO)
+						parseColor(stepText, "|c000079d2", "ALVO")
+
+						-- 5) Items (orange) -> resolve to mobs via pfDB
+						if pfDB and pfDB.items and pfDatabase then
+							local pos = 1
+							while true do
+								local s1 = string.find(stepText, "|c00fca742", pos, true)
+								if not s1 then break end
+								local ns = s1 + 10
+								local s2 = string.find(stepText, "|r", ns, true)
+								if not s2 then break end
+								local raw = string.sub(stepText, ns, s2 - 1)
+								raw = string.gsub(raw, "^%[", "")
+								raw = string.gsub(raw, "%]$", "")
+								if raw and strlen(raw) > 1 then
+									local ids = pfDatabase:GetIDByName(raw, "items")
+									if ids then
+										for id in pairs(ids) do
+											local idata = pfDB.items.data[id]
+											if idata and idata["U"] then
+												for uid, _ in pairs(idata["U"]) do
+													local mname = pfDB.units.loc[uid]
+													addTarget("MOB_DROP", mname, raw)
+												end
+											end
+											break -- first match only
+										end
+									end
+								end
+								pos = s2 + 1
+							end
+						end
+
+						local total = table.getn(targets)
+						if total > 0 then
+							-- Cycle index
+							if not obj._tcIdx then obj._tcIdx = 0 end
+							if not obj._tcStep then obj._tcStep = 0 end
+							if obj._tcStep ~= oDisplay:GetCurrentStep() then
+								obj._tcIdx = 0
+								obj._tcStep = oDisplay:GetCurrentStep()
+							end
+							obj._tcIdx = obj._tcIdx + 1
+							if obj._tcIdx > total then obj._tcIdx = 1 end
+
+							local pick = targets[obj._tcIdx]
+
+							-- Try to target NPC/MOB nearby
+							if pick.type ~= "COORD" then
+								TargetByName(pick.name, true)
+							end
+
+							-- Point pfQuest arrow
+							local pointed = false
+
+							-- Search in pfQuest existing route coords
+							if pfQuest and pfQuest.route and pfQuest.route.coords then
+								for _, data in pairs(pfQuest.route.coords) do
+									if data[3] then
+										local sp = data[3].spawn or ""
+										local ti = data[3].title or ""
+										if sp == pick.name or string.find(ti, pick.name, 1, true) then
+											pfQuest.route.SetTarget(data[3])
+											pointed = true
+											break
+										end
+									end
+								end
+							end
+
+							-- If not found in route, inject via pfDB lookup or step coord
+							if not pointed and pfQuest_PointTo then
+								if pick.type == "COORD" and stepInfo and stepInfo.x and stepInfo.y then
+									-- Use map zone number from pfDB zones
+									local zid = 0
+									if stepInfo.zone and pfDB and pfDB.zones and pfDB.zones.loc then
+										for id, name in pairs(pfDB.zones.loc) do
+											if name == stepInfo.zone then zid = id; break end
+										end
+									end
+									if zid > 0 then
+										pfQuest_PointTo(stepInfo.x, stepInfo.y, zid, pick.name, "Guide waypoint")
+										pointed = true
+									end
+								elseif pfDB and pfDB.units and pfDatabase then
+									local ids = pfDatabase:GetIDByName(pick.name, "units")
+									if ids then
+										for uid in pairs(ids) do
+											local ud = pfDB.units.data[uid]
+											if ud and ud.coords and ud.coords[1] then
+												local ux, uy, uz = unpack(ud.coords[1])
+												if ux and uy and uz and uz > 0 then
+													pfQuest_PointTo(ux, uy, uz, pick.name, pick.type)
+													pointed = true
+												end
+											end
+											break
+										end
+									end
+								end
+							end
+
+							-- Chat message
+							local labels = { COORD="|cffff0000COORD|r", NPC="|cffff00ffNPC|r", ALVO="|cff4444ffALVO|r", MOB_DROP="|cffff8800DROP|r" }
+							local lbl = labels[pick.type] or pick.type
+							local extra = ""
+							if pick.extra then extra = " (" .. pick.extra .. ")" end
+							DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00VG:|r " .. lbl .. " " .. pick.name .. extra .. " [" .. obj._tcIdx .. "/" .. total .. "]" .. (pointed and " |cff00ff00-> SETA|r" or " |cffff0000sem seta|r"))
 						else
-							if VG_Enhance then VG_Enhance:Log("TARGET", "stepInfo or npcs is nil") end
+							DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00VG:|r Nenhum alvo neste passo.")
 						end
 					end
 				elseif arg1 == "RightButton" then
