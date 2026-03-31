@@ -167,3 +167,4 @@ This way you read instructions in Portuguese but find everything in-game without
 ### Keywords
 `wow vanilla addon` `wow 1.12.1` `leveling guide` `vanilla wow guide` `private server` `solocraft` `horde guide` `alliance guide` `joana guide` `brian kopp` `wow addon pt-br` `guia wow vanilla` `tomtom` `quest guide` `vanilla leveling` `1-60 guide` `world of warcraft classic` `enhanced guide` `auto quest` `navigation arrow`
 
+
