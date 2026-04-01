@@ -5,7 +5,7 @@ Description: Quality of life improvements for VanillaGuide Enhanced
 
 VG_Enhance = {}
 VG_Enhance.inCombat = false
-VG_Enhance.compactMode = true
+VG_Enhance.compactMode = 1
 VG_Enhance.initialized = false
 VG_Enhance.logMax = 500
 
@@ -466,19 +466,19 @@ end
 function VG_Enhance:ToggleCompact()
 	local mainFrame = getglobal("VG_MainFrame")
 	if not mainFrame then return end
-	if self.compactMode then
-		self.compactMode = false
-		mainFrame:SetHeight(mainFrame.vg_originalHeight or 320)
+	-- Cycle between: 1 step (compact) <-> 2 steps
+	if self.compactMode == 1 then
+		self.compactMode = 2
+		mainFrame:SetHeight(90)
 		local sfc = getglobal("VG_MainFrame_ScrollFrameChild")
-		if sfc then sfc:GetParent():Show() end
-		DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00VG:|r Modo compacto: |cffff0000OFF|r")
+		if sfc then sfc:GetParent():Hide() end
+		DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00VG:|r Mode: |cff00ccff2 Steps|r")
 	else
-		self.compactMode = true
-		mainFrame.vg_originalHeight = mainFrame:GetHeight()
+		self.compactMode = 1
 		mainFrame:SetHeight(60)
 		local sfc = getglobal("VG_MainFrame_ScrollFrameChild")
 		if sfc then sfc:GetParent():Hide() end
-		DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00VG:|r Modo compacto: |cff00ff00ON|r")
+		DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00VG:|r Mode: |cff00ccff1 Step|r")
 	end
 end
 
