@@ -53,3 +53,17 @@ Thank you to Joana/Mancow and Brian Kopps for the original guides:
     http://www.oocities.org/iliektosuxit/
 
 Thank you to [rsheep](https://github.com/rsheep/VanillaGuide) for the work on the original addon.
+
+---
+
+## Auto-Update
+
+This addon supports **silent auto-update** via `LaunchSoloCraft.ps1`. Every time you launch WoW through the launcher:
+
+1. It checks the latest release on GitHub
+2. Compares with your installed version
+3. Downloads and installs automatically if outdated
+4. Shows a notification in WoW chat when loaded
+
+No manual download needed after first install!
+
