@@ -5,7 +5,7 @@ Description: Quality of life improvements for VanillaGuide Enhanced
 
 VG_Enhance = {}
 VG_Enhance.inCombat = false
-VG_Enhance.compactMode = false
+VG_Enhance.compactMode = true
 VG_Enhance.initialized = false
 VG_Enhance.logMax = 500
 
