@@ -74,11 +74,25 @@ Works on: **SoloCraft**, Elysium, Kronos, Turtle WoW, or any WoW 1.12.1 server.
 
 ## Installation
 
+1. Download `VanillaGuide-Enhanced.zip` from the [Releases](https://github.com/GabHST/VanillaGuide-Enhanced/releases) page (or use the buttons above).
+2. Extract the **VanillaGuide** folder into your `WoW/Interface/AddOns/` directory.
+3. Restart WoW or type `/reload`.
+
+Your final folder structure should look like this:
+
 ```
-1. Download the ZIP for your language (buttons above)
-2. Extract the "VanillaGuide" folder into: WoW/Interface/AddOns/
-3. Restart WoW or /reload
+Interface/AddOns/VanillaGuide/
+├── VanillaGuide.toc
+├── VanillaGuide.lua
+├── Core.lua
+├── Display.lua
+├── UI.lua
+├── Settings.lua
+├── GuideTables/
+└── ...
 ```
+
+> **Do NOT use the green "Code" button or download "Source code (zip)" from GitHub.** These create a nested folder (e.g. `VanillaGuide-Enhanced-main/...`) that WoW won't recognize. Always download from the **Releases** page.
 
 ### Recommended Addons
 
